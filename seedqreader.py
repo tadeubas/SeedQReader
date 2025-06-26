@@ -285,7 +285,6 @@ class MultiQRCode(QRCode):
                     out.data_type = 'bytes'
                     _UR = Bytes
                 elif type == 'Key':
-                    print("key")
                     out.data_type = 'bytes'
                     _UR = Bytes
                 elif type == 'Bytes':
@@ -483,7 +482,7 @@ class ReadQR(QThread):
                 self.qr_data.total_sequences = self.qr_data.decoder.expected_part_count()
             except:
                 self.qr_data.total_sequences = 0
-            self.qr_data.sequences_count = self.qr_data.decoder.processed_parts_count()
+            self.qr_data.sequences_count = len(self.qr_data.decoder.received_part_indexes())
             self.parent.ui.read_progress.setValue(progress)
             self.parent.ui.read_progress.setFormat(f"{self.qr_data.sequences_count}/{self.qr_data.total_sequences}")
             self.parent.ui.read_progress.setVisible(True)
