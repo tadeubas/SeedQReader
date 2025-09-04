@@ -58,7 +58,7 @@ pyimod03_ctypes.install.<locals>.PyInstallerImportError: Failed to load dynlib/d
 
 **Linux/MacOS**:
 ```
-python3 seedqreader.py
+./.seedqrenv/bin/python3 seedqreader.py
 ```
 
 **Windows**:

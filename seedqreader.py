@@ -37,6 +37,7 @@ from embit.psbt import PSBT
 
 from mss import mss
 import numpy as np
+import base64
 
 VERSION="1.1.0"
 
@@ -250,8 +251,13 @@ class MultiQRCode(QRCode):
 
             elif format == FORMAT_BBQR:
                 from bbqr import encode_bbqr
-
-                data_bytes = bytes(data, "utf-8")
+                try:
+                    # print(data)
+                    data_bytes = base64.b64decode(data)
+                except:
+                    print("Error executing b64decode for BBQR, will encode as utf-8")
+                    data_bytes = bytes(data, "utf-8")
+                    pass
 
                 bb = encode_bbqr(data_bytes)
 
@@ -428,18 +434,56 @@ class ReadQR(QThread):
                 self.video_stream.emit(scaled_pixmap)
 
                 data = pyzbar.decode(frame)
+                str_data = ""
                 if data:
+                    # print("try to_str(data[0].data)", data)
                     try:
-                        self.decode(to_str(data[0].data))
+                        str_data = to_str(data[0].data)
+                        # print(str_data)
+                        try:
+                            self.decode(str_data)
+                        except Exception as e:
+                            print("Can't decode str_data", e)
+
+                        try:
+                            ur_decoder = URDecoder()
+                            ur_decoder.receive_part(str_data)
+                            if ur_decoder.is_complete() and ur_decoder.is_success():
+                                cbor = ur_decoder.result_message().cbor
+                                _type = ur_decoder.result_message().type
+                                # print("completed and success", _type, cbor)
+
+                                #  XPub
+                                if _type == 'crypto-account':
+                                    data = Account.from_cbor(cbor).output_descriptors[0].descriptor()
+                                #  PSBT
+                                elif _type == 'crypto-psbt':
+                                    data = UR_PSBT.from_cbor(cbor).data
+                                    if type(data) is bytes:
+                                        data = PSBT.parse(data).to_string()
+                                #  Descriptor
+                                elif _type == 'crypto-output':
+                                    data = Output.from_cbor(cbor).descriptor()
+                                #  bytes
+                                elif _type == 'bytes':
+                                    print('bytes')
+                                    data = Bytes.from_cbor(cbor).data
+                                else:
+                                    print(f"Type not yet implemented: {type}")
+
+                                # print("UR data", data)
+                                self.decode(data)
+                        except Exception as e:
+                            print("Exception on URDecoder()", e)
                     except Exception as e:
-                        print(e)
+                        print("Another Exception", e)
 
             if self.qr_data:
                 if self.qr_data.is_completed:
                     self.video_stream.emit(None)
                     self.data.emit(self.qr_data.data)
                     if self.qr_data.qr_type is None:
-                        print(f"QRCode:{self.qr_data.data}")
+                        print(self.qr_data.data)
                     break
         if self.end:
             self.video_stream.emit(None)
