@@ -39,7 +39,7 @@ from mss import mss
 import numpy as np
 import base64
 
-VERSION="1.1.0"
+VERSION="1.1.1"
 
 MAX_LEN = 100
 FILL_COLOR = "#434343"
