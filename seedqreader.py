@@ -13,7 +13,7 @@ from PySide6.QtWidgets import QApplication, QMainWindow
 from PySide6.QtGui import QImage, QPixmap, QPalette, QColor, QColorConstants, QIcon
 from PySide6.QtCore import Qt, QFile, QThread, Signal
 from PySide6.QtUiTools import QUiLoader
-from PySide6.QtGui import QTextOption
+from PySide6.QtGui import QTextOption, QFontDatabase
 
 from PIL import ImageQt
 
@@ -39,7 +39,7 @@ from mss import mss
 import numpy as np
 import base64
 
-VERSION="1.1.1"
+VERSION="1.1.2"
 
 MAX_LEN = 100
 FILL_COLOR = "#434343"
@@ -657,6 +657,10 @@ class MainWindow(QMainWindow):
         self.ui.delay_slider.valueChanged.connect(self.on_delay_slider_move)
         self.ui.no_split.stateChanged.connect(self.on_no_split_change)
 
+        # use monospace font for data in/out boxes
+        font = QFontDatabase.systemFont(QFontDatabase.SystemFont.FixedFont)
+        self.ui.data_out.setFont(font)
+        self.ui.data_in.setFont(font)
         self.ui.data_out.setWordWrapMode(QTextOption.WrapAnywhere)
 
         #  init radio button
