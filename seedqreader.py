@@ -82,6 +82,28 @@ def descriptor_to_output(descriptor_str):
         if any(op in miniscript_str for op in advanced_operators):
             raise ValueError(f"crypto-output does not support advanced miniscript: {miniscript_str}")
 
+    # Check for taproot miniscripts
+    if hasattr(embit_desc, 'is_taproot') and embit_desc.is_taproot and embit_desc.taptree:
+        def check_taptree_for_advanced_miniscript(tree_obj):
+            """Recursively check taptree for advanced miniscripts."""
+            advanced_operators = ['or_d', 'or_c', 'or_i', 'or_b', 'and_v', 'and_b', 'and_n',
+                                 'andor', 'thresh', 'older', 'after', 'sha256', 'hash256',
+                                 'ripemd160', 'hash160']
+
+            if hasattr(tree_obj, 'miniscript') and tree_obj.miniscript is not None:
+                miniscript_str = str(tree_obj.miniscript)
+                if any(op in miniscript_str for op in advanced_operators):
+                    raise ValueError(f"crypto-output does not support advanced miniscript: {miniscript_str}")
+
+            if hasattr(tree_obj, 'tree') and tree_obj.tree is not None:
+                if isinstance(tree_obj.tree, (list, tuple)):
+                    for item in tree_obj.tree:
+                        check_taptree_for_advanced_miniscript(item)
+                else:
+                    check_taptree_for_advanced_miniscript(tree_obj.tree)
+
+        check_taptree_for_advanced_miniscript(embit_desc.taptree)
+
     # Build script expressions list based on descriptor type
     script_expressions = []
     script_type = embit_desc.scriptpubkey_type()
