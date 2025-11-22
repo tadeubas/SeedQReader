@@ -30,10 +30,11 @@ from foundation.ur_encoder import UREncoder
 from foundation.ur import UR
 
 from urtypes.crypto import PSBT as UR_PSBT
-from urtypes.crypto import Account, Output
+from urtypes.crypto import Account, Output, HDKey, ECKey, MultiKey, Keypath, PathComponent, SCRIPT_EXPRESSION_TAG_MAP
 from urtypes.bytes import Bytes
 
 from embit.psbt import PSBT
+from embit.descriptor import Descriptor as EmbitDescriptor
 
 from mss import mss
 import numpy as np
@@ -61,6 +62,161 @@ bbqr_obj = None
 
 def to_str(bin_):
     return bin_.decode('utf-8')
+
+
+def descriptor_to_output(descriptor_str):
+    """Convert a descriptor string to a urtypes Output object."""
+    from embit.networks import NETWORKS
+    import binascii
+
+    # Parse descriptor using embit
+    embit_desc = EmbitDescriptor.from_string(descriptor_str)
+
+    # Check for advanced miniscript - crypto-output only supports basic descriptors
+    if hasattr(embit_desc, 'miniscript') and embit_desc.miniscript and not embit_desc.is_basic_multisig:
+        # Check if it's an advanced miniscript (not just pk/pkh/wpkh)
+        miniscript_str = str(embit_desc.miniscript)
+        advanced_operators = ['or_d', 'or_c', 'or_i', 'or_b', 'and_v', 'and_b', 'and_n',
+                             'andor', 'thresh', 'older', 'after', 'sha256', 'hash256',
+                             'ripemd160', 'hash160']
+        if any(op in miniscript_str for op in advanced_operators):
+            raise ValueError(f"crypto-output does not support advanced miniscript: {miniscript_str}")
+
+    # Check for taproot miniscripts
+    if hasattr(embit_desc, 'is_taproot') and embit_desc.is_taproot and embit_desc.taptree:
+        def check_taptree_for_advanced_miniscript(tree_obj):
+            """Recursively check taptree for advanced miniscripts."""
+            advanced_operators = ['or_d', 'or_c', 'or_i', 'or_b', 'and_v', 'and_b', 'and_n',
+                                 'andor', 'thresh', 'older', 'after', 'sha256', 'hash256',
+                                 'ripemd160', 'hash160']
+
+            if hasattr(tree_obj, 'miniscript') and tree_obj.miniscript is not None:
+                miniscript_str = str(tree_obj.miniscript)
+                if any(op in miniscript_str for op in advanced_operators):
+                    raise ValueError(f"crypto-output does not support advanced miniscript: {miniscript_str}")
+
+            if hasattr(tree_obj, 'tree') and tree_obj.tree is not None:
+                if isinstance(tree_obj.tree, (list, tuple)):
+                    for item in tree_obj.tree:
+                        check_taptree_for_advanced_miniscript(item)
+                else:
+                    check_taptree_for_advanced_miniscript(tree_obj.tree)
+
+        check_taptree_for_advanced_miniscript(embit_desc.taptree)
+
+    # Build script expressions list based on descriptor type
+    script_expressions = []
+    script_type = embit_desc.scriptpubkey_type()
+
+    # Map embit script types to urtypes script expressions
+    # sh = 400, wsh = 401, pk = 402, pkh = 403, wpkh = 404, multi = 406, sortedmulti = 407
+    if embit_desc.is_wrapped:
+        script_expressions.append(SCRIPT_EXPRESSION_TAG_MAP[400])  # sh
+
+    if script_type == "p2wsh":
+        script_expressions.append(SCRIPT_EXPRESSION_TAG_MAP[401])  # wsh
+        if embit_desc.is_basic_multisig:
+            if embit_desc.is_sorted:
+                script_expressions.append(SCRIPT_EXPRESSION_TAG_MAP[407])  # sortedmulti
+            else:
+                script_expressions.append(SCRIPT_EXPRESSION_TAG_MAP[406])  # multi
+    elif script_type == "p2wpkh":
+        script_expressions.append(SCRIPT_EXPRESSION_TAG_MAP[404])  # wpkh
+    elif script_type == "p2pkh":
+        script_expressions.append(SCRIPT_EXPRESSION_TAG_MAP[403])  # pkh
+    elif script_type == "p2pk":
+        script_expressions.append(SCRIPT_EXPRESSION_TAG_MAP[402])  # pk
+
+    # Convert keys
+    embit_keys = embit_desc.keys
+
+    # Handle multisig
+    if embit_desc.is_basic_multisig:
+        # Get threshold from the miniscript args
+        threshold = 1  # default
+        if hasattr(embit_desc, 'miniscript') and embit_desc.miniscript:
+            # The first argument is a Number object with the threshold
+            threshold = embit_desc.miniscript.args[0].num
+
+        ec_keys = []
+        hd_keys = []
+
+        for embit_key in embit_keys:
+            if embit_key.is_extended:
+                hd_keys.append(_convert_hd_key(embit_key))
+            else:
+                ec_keys.append(_convert_ec_key(embit_key))
+
+        crypto_key = MultiKey(threshold, ec_keys, hd_keys)
+    else:
+        # Single key
+        embit_key = embit_keys[0]
+        if embit_key.is_extended:
+            crypto_key = _convert_hd_key(embit_key)
+        else:
+            crypto_key = _convert_ec_key(embit_key)
+
+    return Output(script_expressions, crypto_key)
+
+
+def _convert_ec_key(embit_key):
+    """Convert embit Key to urtypes ECKey."""
+    import binascii
+
+    # Get the public key bytes
+    pubkey_bytes = embit_key.key.sec()
+
+    # ECKey(data, origin=None, name=None)
+    return ECKey(pubkey_bytes, None, None)
+
+
+def _convert_hd_key(embit_key):
+    """Convert embit extended Key to urtypes HDKey."""
+    import binascii
+    from urtypes.crypto import CoinInfo
+
+    xpub = embit_key.key
+
+    # Build HDKey dict
+    hd_dict = {
+        "private_key": False,  # Explicitly mark as public key (required for proper CBOR encoding)
+        "key": xpub.key.sec(),
+        "chain_code": xpub.chain_code,
+    }
+
+    # Handle origin (derivation path)
+    if embit_key.origin:
+        origin_components = []
+        for component in embit_key.origin.derivation:
+            is_hardened = component >= 0x80000000
+            index = component - 0x80000000 if is_hardened else component
+            origin_components.append(PathComponent(index, is_hardened))
+
+        origin_fingerprint = embit_key.origin.fingerprint
+        # Set depth to the number of components in the origin path
+        origin_depth = len(origin_components)
+        hd_dict["origin"] = Keypath(
+            origin_components,
+            origin_fingerprint,
+            origin_depth
+        )
+
+    # Add use_info for Bitcoin (type=0, network=0 for mainnet, 1 for testnet)
+    # Determine network from coin type in origin path (coin_type 0 = mainnet, 1 = testnet)
+    network = 0  # Default to mainnet
+    if embit_key.origin and len(embit_key.origin.derivation) >= 2:
+        coin_type = embit_key.origin.derivation[1]
+        # Remove hardened bit to get coin type value
+        coin_type_val = coin_type - 0x80000000 if coin_type >= 0x80000000 else coin_type
+        network = 1 if coin_type_val == 1 else 0
+
+    hd_dict["use_info"] = CoinInfo(0, network)
+
+    # Parent fingerprint
+    if hasattr(xpub, 'fingerprint'):
+        hd_dict["parent_fingerprint"] = xpub.fingerprint
+
+    return HDKey(hd_dict)
 
 
 @dataclass
@@ -282,25 +438,32 @@ class MultiQRCode(QRCode):
                     out.data = sequence
 
             elif format == FORMAT_UR:
-                _UR = None
+                if not _max:
+                    _max = 100000
+
                 if type == 'PSBT':
                     out.data_type = 'crypto-psbt'
                     data = PSBT.from_string(data).serialize()
-                    _UR = UR_PSBT
+                    ur = UR(out.data_type, UR_PSBT(data).to_cbor())
                 elif type == 'Descriptor':
-                    out.data_type = 'bytes'
-                    _UR = Bytes
+                    # Try to encode as crypto-output, fall back to bytes for complex descriptors
+                    try:
+                        out.data_type = 'crypto-output'
+                        output_obj = descriptor_to_output(data)
+                        ur = UR(out.data_type, output_obj.to_cbor())
+                    except Exception as e:
+                        print(f"Cannot encode as crypto-output ({e}), encoding as bytes instead")
+                        out.data_type = 'bytes'
+                        ur = UR(out.data_type, Bytes(data).to_cbor())
                 elif type == 'Key':
                     out.data_type = 'bytes'
-                    _UR = Bytes
+                    ur = UR(out.data_type, Bytes(data).to_cbor())
                 elif type == 'Bytes':
                     out.data_type = 'bytes'
-                    _UR = Bytes
+                    ur = UR(out.data_type, Bytes(data).to_cbor())
                 else:
                     return
-                if not _max:
-                    _max = 100000
-                ur = UR(out.data_type, _UR(data).to_cbor())
+
                 out.encoder = UREncoder(ur, _max)
                 out.total_sequences = out.encoder.fountain_encoder.seq_len()
         else:
