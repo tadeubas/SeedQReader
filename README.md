@@ -9,7 +9,7 @@
 It actually can send/receive:
 - 1 Frame QRCodes
 - Multiframes QRCodes using the `Specter` format (_p M of N_)
-- Multiframes QRCodes using the `UR` format are partially supported (PSBT and Bytes)
+- Multiframes QRCodes using the `UR` format are partially supported (Desciptor, PSBT and Bytes)
 - Multiframes QRCodes using the `BBQR` format are partially supported (PSBT)
 
 ## Download the latest releases
@@ -72,8 +72,8 @@ python seedqreader.py
 ```
 pip install PyInstaller
 rm seedqreader_*.spec
-python3 .ci/create-spec.py
-python3 -m PyInstaller seedqreader_*.spec
+./.seedqrenv/bin/python3 .ci/create-spec.py
+./.seedqrenv/bin/python3 -m PyInstaller seedqreader_*.spec
 ```
 
 ## Acknowledgements & Alternatives
