@@ -40,7 +40,7 @@ from mss import mss
 import numpy as np
 import base64
 
-VERSION="1.2.0"
+VERSION="1.3.0"
 
 MAX_LEN = 100
 FILL_COLOR = "#434343"
@@ -55,6 +55,8 @@ ANIMATED_QR_FIRST_FRAME_DELAY = 900 #ms
 FORMAT_UR = 'UR'
 FORMAT_SPECTER = 'Specter'
 FORMAT_BBQR = 'BBQR'
+
+PYZBAR_SYMBOLS = (pyzbar.ZBarSymbol.QRCODE, pyzbar.ZBarSymbol.SQCODE)
 
 # helper obj to handle bbqr encoding and file_type
 bbqr_obj = None
@@ -596,8 +598,14 @@ class ReadQR(QThread):
                 # Set the pixmap to the label
                 self.video_stream.emit(scaled_pixmap)
 
-                data = pyzbar.decode(frame)
+                data = pyzbar.decode(frame, PYZBAR_SYMBOLS)
                 str_data = ""
+
+                # Try to invert colors
+                if not data:
+                    frame = cv2.bitwise_not(frame)
+                    data = pyzbar.decode(frame, PYZBAR_SYMBOLS)
+
                 if data:
                     # print("try to_str(data[0].data)", data)
                     try:
