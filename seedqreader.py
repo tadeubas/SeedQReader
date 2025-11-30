@@ -11,7 +11,7 @@ from yaml.loader import SafeLoader as Loader
 
 from PySide6.QtWidgets import QApplication, QMainWindow
 from PySide6.QtGui import QImage, QPixmap, QPalette, QColor, QColorConstants, QIcon
-from PySide6.QtCore import Qt, QFile, QThread, Signal
+from PySide6.QtCore import Qt, QFile, QThread, Signal, QEvent
 from PySide6.QtUiTools import QUiLoader
 from PySide6.QtGui import QTextOption, QFontDatabase
 
@@ -791,6 +791,11 @@ class DisplayQR(QThread):
             img = qr.make_image()
             pil_image = img.convert("RGB")
             qimage = ImageQt.ImageQt(pil_image)
+
+            # invert QR colors
+            if self.parent.ui.inverted.isChecked():
+                qimage.invertPixels() 
+
             qimage = qimage.convertToFormat(QImage.Format_RGB888)
 
             # Create a QPixmap from the QImage
@@ -827,6 +832,8 @@ class MainWindow(QMainWindow):
         self.ui.send_slider.valueChanged.connect(self.on_slider_move)
         self.ui.delay_slider.valueChanged.connect(self.on_delay_slider_move)
         self.ui.no_split.stateChanged.connect(self.on_no_split_change)
+        self.ui.no_split_label.installEventFilter(self)
+        self.ui.inverted_label.installEventFilter(self)
 
         # use monospace font for data in/out boxes
         font = QFontDatabase.systemFont(QFontDatabase.SystemFont.FixedFont)
@@ -876,6 +883,15 @@ class MainWindow(QMainWindow):
         self.on_monitor_update()
 
         self.init_qr()
+
+    def eventFilter(self, obj, event):
+        if obj == self.ui.no_split_label and event.type() == QEvent.MouseButtonPress:
+            self.ui.no_split.setChecked(not self.ui.no_split.isChecked())
+            return True
+        if obj == self.ui.inverted_label and event.type() == QEvent.MouseButtonPress:
+            self.ui.inverted.setChecked(not self.ui.inverted.isChecked())
+            return True
+        return super().eventFilter(obj, event)
 
     def init_qr(self):
         self.read_qr = ReadQR(self)
