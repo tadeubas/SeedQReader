@@ -50,6 +50,22 @@
       <bool>true</bool>
      </property>
     </widget>
+    <widget class="QPlainTextEdit" name="info_read">
+     <property name="geometry">
+      <rect>
+       <x>10</x>
+       <y>556</y>
+       <width>771</width>
+       <height>28</height>
+      </rect>
+     </property>
+     <property name="lineWrapMode">
+      <enum>QPlainTextEdit::WidgetWidth</enum>
+     </property>
+     <property name="readOnly">
+      <bool>true</bool>
+     </property>
+    </widget>
     <widget class="QProgressBar" name="read_progress">
      <property name="geometry">
       <rect>
@@ -224,7 +240,7 @@
     <widget class="QLabel" name="video_out">
      <property name="geometry">
       <rect>
-       <x>250</x>
+       <x>350</x>
        <y>140</y>
        <width>450</width>
        <height>450</height>
@@ -254,12 +270,35 @@
       </rect>
      </property>
     </widget>
+    <widget class="QComboBox" name="combo_error">
+     <property name="geometry">
+      <rect>
+       <x>126</x>
+       <y>140</y>
+       <width>100</width>
+       <height>27</height>
+      </rect>
+     </property>
+    </widget>
     <widget class="QLabel" name="steps">
      <property name="geometry">
       <rect>
-       <x>440</x>
-       <y>590</y>
-       <width>67</width>
+       <x>350</x>
+       <y>592</y>
+       <width>450</width>
+       <height>17</height>
+      </rect>
+     </property>
+     <property name="text">
+      <string/>
+     </property>
+    </widget>
+    <widget class="QLabel" name="info_send">
+     <property name="geometry">
+      <rect>
+       <x>350</x>
+       <y>611</y>
+       <width>450</width>
        <height>17</height>
       </rect>
      </property>

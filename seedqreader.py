@@ -18,6 +18,7 @@ from PySide6.QtGui import QTextOption, QFontDatabase
 from PIL import ImageQt
 
 from pyzbar import pyzbar
+import zxingcpp
 
 import qrcode
 
@@ -56,6 +57,11 @@ FORMAT_UR = 'UR'
 FORMAT_SPECTER = 'Specter'
 FORMAT_BBQR = 'BBQR'
 
+ECC_L = 'ECC L 7%'
+ECC_M = 'ECC M 15%'
+ECC_Q = 'ECC Q 25%'
+ECC_H = 'ECC H 30%'
+
 PYZBAR_SYMBOLS = (pyzbar.ZBarSymbol.QRCODE, pyzbar.ZBarSymbol.SQCODE)
 
 # helper obj to handle bbqr encoding and file_type
@@ -69,7 +75,6 @@ def to_str(bin_):
 def descriptor_to_output(descriptor_str):
     """Convert a descriptor string to a urtypes Output object."""
     from embit.networks import NETWORKS
-    import binascii
 
     # Parse descriptor using embit
     embit_desc = EmbitDescriptor.from_string(descriptor_str)
@@ -163,7 +168,6 @@ def descriptor_to_output(descriptor_str):
 
 def _convert_ec_key(embit_key):
     """Convert embit Key to urtypes ECKey."""
-    import binascii
 
     # Get the public key bytes
     pubkey_bytes = embit_key.key.sec()
@@ -174,7 +178,6 @@ def _convert_ec_key(embit_key):
 
 def _convert_hd_key(embit_key):
     """Convert embit extended Key to urtypes HDKey."""
-    import binascii
     from urtypes.crypto import CoinInfo
 
     xpub = embit_key.key
@@ -510,12 +513,15 @@ class ReadQR(QThread):
         self.finished.connect(self.on_finnish)
         self.qr_data: QRCode | MultiQRCode = None
         self.capture = None
+        self.ecc_read = None
+        self.version_read = []
         self.end = False
         self.viaCamera = True
 
     def run(self):
-        from PIL import Image
         self.qr_data: QRCode | MultiQRCode = None
+        self.ecc_read = None
+        self.version_read = []
 
         if self.viaCamera:
             # Initialize the camera
@@ -567,6 +573,7 @@ class ReadQR(QThread):
                     # Convert to numpy array (BGRA format)
                     img_data = np.frombuffer(screenshot.rgb, dtype=np.uint8)
                     frame = img_data.reshape((screenshot.height, screenshot.width, 3))
+                    frame = np.ascontiguousarray(frame)
                     
                     # Add an alpha channel to convert RGB to RGBA
                     alpha_channel = np.full((height, width, 1), 255, dtype=np.uint8)  # Fully opaque
@@ -607,10 +614,18 @@ class ReadQR(QThread):
                     data = pyzbar.decode(frame, PYZBAR_SYMBOLS)
 
                 if data:
-                    # print("try to_str(data[0].data)", data)
                     try:
-                        str_data = to_str(data[0].data)
-                        # print(str_data)
+                        data = data[0].data
+
+                        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                        results = zxingcpp.read_barcodes(rgb)
+                        ecc=None
+                        if results:
+                            ecc = results[0].ec_level
+                            self._parse_ecc_and_version(data, ecc)
+                        
+                        print(data) #print binary data
+                        str_data = to_str(data)
                         try:
                             self.decode(str_data)
                         except Exception as e:
@@ -659,6 +674,25 @@ class ReadQR(QThread):
         if self.end:
             self.video_stream.emit(None)
         return
+    
+    def _parse_ecc_and_version(self, data, ecc):
+        if ecc == "L":
+            self.ecc_read = ECC_L
+            level = qrcode.constants.ERROR_CORRECT_L
+        elif ecc == "M":
+            self.ecc_read = ECC_M
+            level = qrcode.constants.ERROR_CORRECT_M
+        elif ecc == "Q":
+            self.ecc_read = ECC_Q
+            level = qrcode.constants.ERROR_CORRECT_Q
+        elif ecc == "H":
+            self.ecc_read = ECC_H
+            level = qrcode.constants.ERROR_CORRECT_H
+        qr = qrcode.QRCode(error_correction=level)
+        qr.add_data(data)
+        qr.make(fit=False)
+        # print(data, qr.version, self.version_read)
+        self.version_read.append(qr.version)
 
     def decode(self, data):
         '''Multipart QR Code case'''
@@ -732,6 +766,8 @@ class ReadQR(QThread):
         else:
             self.qr_data = QRCode()
             self.qr_data.append(data)
+            if self.version_read:
+                self.version_read = self.version_read[-1]
 
     def on_finnish(self):
         if self.capture:
@@ -781,13 +817,33 @@ class DisplayQR(QThread):
         elif self.qr_data.total_sequences == 1:
             data = self.qr_data.data
             self.display_qr(data)
-        self.parent.ui.steps.setText('')
+
+    def mode_to_str(self, mode):
+        if mode == qrcode.util.MODE_NUMBER:
+            return "numeric"
+        if mode == qrcode.util.MODE_ALPHA_NUM:
+            return "alphanumeric"
+        if mode == qrcode.util.MODE_8BIT_BYTE:
+            return "byte"
+        return "kanji"
 
     def display_qr(self, data):
         try:
-            qr = qrcode.QRCode()
+            level = qrcode.constants.ERROR_CORRECT_L
+            if self.parent.error_correction == ECC_M:
+                level = qrcode.constants.ERROR_CORRECT_M
+            elif self.parent.error_correction == ECC_Q:
+                level = qrcode.constants.ERROR_CORRECT_Q
+            elif self.parent.error_correction == ECC_H:
+                level = qrcode.constants.ERROR_CORRECT_H
+
+            qr = qrcode.QRCode(error_correction=level)
             qr.add_data(data)
             qr.make(fit=False)
+            modes = set()
+            for element in qr.data_list:
+                modes.add(self.mode_to_str(element.mode))
+            self.parent.ui.info_send.setText(f"Version {qr.version} - {len(data)} chars ({', '.join(modes)})")
             img = qr.make_image()
             pil_image = img.convert("RGB")
             qimage = ImageQt.ImageQt(pil_image)
@@ -839,7 +895,11 @@ class MainWindow(QMainWindow):
         font = QFontDatabase.systemFont(QFontDatabase.SystemFont.FixedFont)
         self.ui.data_out.setFont(font)
         self.ui.data_in.setFont(font)
+        self.ui.steps.setFont(font)
+        self.ui.info_send.setFont(font)
+        self.ui.info_read.setFont(font)
         self.ui.data_out.setWordWrapMode(QTextOption.WrapAnywhere)
+        self.ui.data_in.setWordWrapMode(QTextOption.WrapAnywhere)
 
         #  init radio button
 
@@ -869,6 +929,12 @@ class MainWindow(QMainWindow):
         self.format = self.ui.combo_format.currentText()
         self.ui.combo_format.currentIndexChanged.connect(self.on_format_change)
         self.ui.combo_type.currentIndexChanged.connect(self.on_data_type_change)
+
+        self.ui.combo_error.addItems([ECC_L, ECC_M, ECC_Q, ECC_H])
+        self.error_correction = self.ui.combo_error.currentText()
+        self.ui.combo_error.currentIndexChanged.connect(self.on_error_change)
+
+        self.ui.steps.setAlignment(Qt.AlignHCenter)
 
         self.ui.combo_type.addItems(['Descriptor', 'PSBT', 'Key', 'Bytes'])
         self.ui.combo_type.hide()
@@ -987,6 +1053,9 @@ class MainWindow(QMainWindow):
             self.ui.combo_type.hide()
             self.data_type = None
 
+    def on_error_change(self):
+        self.error_correction = self.ui.combo_error.currentText()
+
     def on_data_type_change(self):
         if self.format == FORMAT_UR:
             self.data_type = self.ui.combo_type.currentText()
@@ -995,6 +1064,8 @@ class MainWindow(QMainWindow):
         if frame is None:
             frame = QPixmap(self.ui.video_in.size())
             frame.fill(QColor(FILL_COLOR))
+            self.ui.info_send.setText('')
+            self.ui.steps.setText('')
         
         self.ui.video_out.setPixmap(frame)
 
@@ -1010,12 +1081,17 @@ class MainWindow(QMainWindow):
         if not self.read_qr.isRunning():
             self.read_qr.end = False
             self.ui.data_in.setPlainText('')
+            self.ui.info_read.setPlainText('')
             self.read_qr.start()
         else:
             self.read_qr.end = True
+            self.ecc_read = None
+            self.version_read = []
+
+    def is_alnum(self, c):
+        return ("A" <= c <= "Z") or ("0" <= c <= "9") or c in (" $%*+-./:")
 
     def on_qr_data_read(self, data):
-        self.ui.data_in.setWordWrapMode(QTextOption.WrapAnywhere)
         if isinstance(data, bytes):
             try:
                 data = data.decode("utf-8")
@@ -1027,6 +1103,23 @@ class MainWindow(QMainWindow):
                     print("Could not identify data", e)
                 
         self.ui.data_in.setPlainText(data)
+
+        mode = 'byte'
+        if not isinstance(data, bytes):
+            if all(("0" <= c <= "9") for c in data):
+                mode = 'numeric'
+            elif all(self.is_alnum(c) for c in data):
+                mode = 'alphanumeric'
+        
+        ecc = ''
+        if self.read_qr.ecc_read:
+            ver = self.read_qr.version_read
+            if isinstance(ver, list):
+                ver = f"{min(ver)} to {max(ver)}"
+
+            ecc = f"Version {ver} ({self.read_qr.ecc_read}) - "
+        
+        self.ui.info_read.setPlainText(f"{ecc}{len(data)} chars ({mode})")
 
     def upd_camera_stream(self, frame):
         if frame is None:
@@ -1041,7 +1134,7 @@ class MainWindow(QMainWindow):
     def on_no_split_change(self):
         self.ui.send_slider.setDisabled(self.ui.no_split.isChecked())
         self.ui.split_size.setDisabled(self.ui.no_split.isChecked())
-        self.disableQRCombo(self.ui.no_split.isChecked())
+        self.updateDisableQRCombo()
 
         if self.ui.no_split.isChecked():
             self.set_split_slider('-')
@@ -1080,21 +1173,28 @@ class MainWindow(QMainWindow):
             self.display_qr.start()
 
             self.ui.btn_generate.setText(STOP_QR_TXT)
-            self.disableQRCombo(True)
+            self.updateDisableQRCombo()
         else:
             self.display_qr.stop = True
             self.display_qr.video_stream.emit(None)
 
             self.ui.split_group.setDisabled(False)
             self.ui.btn_generate.setText(GENERATE_TXT)
-            self.disableQRCombo(False)
+            self.updateDisableQRCombo()
 
     def on_btn_clear(self):
         self.ui.data_out.setPlainText('')
 
-    def disableQRCombo(self, val):
-        self.ui.combo_type.setDisabled(val)
-        self.ui.combo_format.setDisabled(val)
+    def updateDisableQRCombo(self):
+        disable = self.ui.btn_generate.text() == STOP_QR_TXT
+        self.ui.combo_error.setDisabled(disable)
+
+        if self.ui.no_split.isChecked():
+            self.ui.combo_type.setDisabled(True)
+            self.ui.combo_format.setDisabled(True)
+        else:
+            self.ui.combo_type.setDisabled(disable)
+            self.ui.combo_format.setDisabled(disable)
 
     def select_data_type(self, data_type):
         self.data_type = data_type
