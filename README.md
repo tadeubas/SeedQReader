@@ -76,6 +76,12 @@ rm seedqreader_*.spec
 ./.seedqrenv/bin/python3 -m PyInstaller seedqreader_*.spec
 ```
 
+#### Create ico from png
+
+```
+convert icon.png -define icon:auto-resize=256,128,64,48,32,16 icon.ico
+```
+
 ## Acknowledgements & Alternatives
 
 Big thanks to [pythcoiner](https://github.com/pythcoiner) for originally creating SeedQReader! 🙌

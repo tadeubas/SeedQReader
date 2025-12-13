@@ -41,6 +41,9 @@ from mss import mss
 import numpy as np
 import base64
 
+import assets_rc
+
+
 VERSION="1.4.0"
 
 MAX_LEN = 100
@@ -917,7 +920,7 @@ class MainWindow(QMainWindow):
         self.ui = loader.load(ui_file, self)
         ui_file.close()
         self.setWindowTitle("SeedQReader " + VERSION)
-        self.setWindowIcon(QIcon('assets/icon.png'))
+        self.setWindowIcon(QIcon(':/assets/icon.png'))
         self.setFixedSize(self.ui.tabWidget.width(),self.ui.tabWidget.height())
 
         self.setCentralWidget(self.ui)

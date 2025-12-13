@@ -52,7 +52,8 @@ if __name__ == "__main__":
     PYFILE = f"{PYNAME}.py"
     KFILE = str(ROOT_PATH / PYFILE)
     ASSETS = str(ROOT_PATH / "assets")
-    ICON = join(ASSETS, "icon.png")
+    ICON = join(ASSETS, "icon.ico")
+
     # I18NS = str(ROOT_PATH / "src" / "i18n")
 
     BUILDER_ARGS = [ ]
@@ -61,7 +62,8 @@ if __name__ == "__main__":
     BUILDER_ARGS.append(f"--name={PYNAME}_{VERSION}")
 
     # The application has window
-    BUILDER_ARGS.append("--windowed")
+    # BUILDER_ARGS.append("--windowed")
+    BUILDER_ARGS.append("--console")
 
     # Icon
     BUILDER_ARGS.append(f"--icon={ICON}")
@@ -76,7 +78,6 @@ if __name__ == "__main__":
         # Tha application is a GUI with a hidden console
         # to keep `sys` module enabled (necessary for Kboot)
         BUILDER_ARGS.append("--onefile")
-        BUILDER_ARGS.append("--console")
         BUILDER_ARGS.append("--hidden-import=win32timezone")
         BUILDER_ARGS.append("--hide-console=minimize-early")
         BUILDER_ARGS.append("--add-binary=assets/libiconv.dll:.")
@@ -85,7 +86,7 @@ if __name__ == "__main__":
     elif SYSTEM == "Darwin":
         # Tha application is a GUI in a bundled .app
         BUILDER_ARGS.append("--onefile")
-        BUILDER_ARGS.append("--noconsole")
+        # BUILDER_ARGS.append("--noconsole")
         
         # For darwin system, will be necessary
         # to add a hidden import for ssl
