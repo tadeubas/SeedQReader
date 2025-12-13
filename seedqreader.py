@@ -41,7 +41,7 @@ from mss import mss
 import numpy as np
 import base64
 
-VERSION="1.3.0"
+VERSION="1.4.0"
 
 MAX_LEN = 100
 FILL_COLOR = "#434343"
@@ -54,18 +54,27 @@ GENERATE_TXT = 'Generate QR'
 ANIMATED_QR_FIRST_FRAME_DELAY = 900 #ms
 
 FORMAT_UR = 'UR'
-FORMAT_SPECTER = 'Specter'
+FORMAT_SPECTER = 'Simple / pMofN (Specter)'
 FORMAT_BBQR = 'BBQR'
+
+COMBO_TYPE_DESCRIPTOR = 'Descriptor'
+COMBO_TYPE_PSBT = 'PSBT'
+COMBO_TYPE_KEY = 'Key'
+COMBO_TYPE_BYTES = 'Bytes'
 
 ECC_L = 'ECC L 7%'
 ECC_M = 'ECC M 15%'
 ECC_Q = 'ECC Q 25%'
 ECC_H = 'ECC H 30%'
 
+NO_SPLIT_MAX_CHARS = 999999
+
 PYZBAR_SYMBOLS = (pyzbar.ZBarSymbol.QRCODE, pyzbar.ZBarSymbol.SQCODE)
 
 # helper obj to handle bbqr encoding and file_type
 bbqr_obj = None
+
+sequence_reader = 0
 
 
 def to_str(bin_):
@@ -387,7 +396,7 @@ class MultiQRCode(QRCode):
 
     @staticmethod
     def from_string(data, _max=MAX_LEN, type=None, format=None):
-        if (_max and len(data) > _max) or format == FORMAT_UR:
+        if (_max and len(data) > _max) or format == FORMAT_UR or format == FORMAT_BBQR:
             out = MultiQRCode()
             out.data = data
 
@@ -422,12 +431,13 @@ class MultiQRCode(QRCode):
 
                 bb = encode_bbqr(data_bytes)
 
-                # adjust BBQR size from 10-500 to 23-200
-                old_min, old_max = 10, 500
-                new_min, new_max = 23, 100
+                if (_max < NO_SPLIT_MAX_CHARS):
+                    # adjust BBQR size from 10-500 to 23-200
+                    old_min, old_max = 10, 500
+                    new_min, new_max = 23, 100
 
-                scaled_value = new_min + ((_max - old_min) * (new_max - new_min)) / (old_max - old_min)
-                _max = int(round(scaled_value))
+                    scaled_value = new_min + ((_max - old_min) * (new_max - new_min)) / (old_max - old_min)
+                    _max = int(round(scaled_value))
 
                 count = 1
                 for sequence, total in bb.to_qr_code(_max):
@@ -472,6 +482,7 @@ class MultiQRCode(QRCode):
                 out.encoder = UREncoder(ur, _max)
                 out.total_sequences = out.encoder.fountain_encoder.seq_len()
         else:
+            # SINGLE NORMAL QR CODE
             out = QRCode()
             out.data = data
             out.data_init(1)
@@ -515,6 +526,7 @@ class ReadQR(QThread):
         self.capture = None
         self.ecc_read = None
         self.version_read = []
+        self.len_read = 0
         self.end = False
         self.viaCamera = True
 
@@ -522,6 +534,8 @@ class ReadQR(QThread):
         self.qr_data: QRCode | MultiQRCode = None
         self.ecc_read = None
         self.version_read = []
+        self.len_read = 0
+        global sequence_reader
 
         if self.viaCamera:
             # Initialize the camera
@@ -607,25 +621,53 @@ class ReadQR(QThread):
 
                 data = pyzbar.decode(frame, PYZBAR_SYMBOLS)
                 str_data = ""
-
-                # Try to invert colors
+                results = None
+                
                 if not data:
-                    frame = cv2.bitwise_not(frame)
-                    data = pyzbar.decode(frame, PYZBAR_SYMBOLS)
+                    # Try other lib
+                    rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                    results = zxingcpp.read_barcodes(rgb)
 
-                if data:
+                    if not results:
+                        # Try to invert colors
+                        frame = cv2.bitwise_not(frame)
+                        data = pyzbar.decode(frame, PYZBAR_SYMBOLS)
+
+                        if not data:
+                            # Try other lib
+                            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                            results = zxingcpp.read_barcodes(rgb)
+
+                if data or results:
                     try:
-                        data = data[0].data
-
-                        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                        results = zxingcpp.read_barcodes(rgb)
-                        ecc=None
-                        if results:
+                        if data:
+                            data = data[0].data
+                            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                            results = zxingcpp.read_barcodes(rgb)
+                            if results:
+                                ecc = results[0].ec_level
+                                self._parse_ecc_and_version(data, ecc)
+                        elif results:
+                            data = results[0].bytes
                             ecc = results[0].ec_level
                             self._parse_ecc_and_version(data, ecc)
-                        
-                        print(data) #print binary data
-                        str_data = to_str(data)
+
+                        sequence_reader += 1
+                        if isinstance(data, bytes):
+                            print(f"\n#{sequence_reader} BYTES in HEX (raw data):")
+                            print(data.hex())
+                        print(f"\n#{sequence_reader} RAW data:")
+                        try:
+                            print(data)
+                        except Exception as e:
+                            print("Exception trying to print data:", e)
+                        try:
+                            if data:
+                                str_data = to_str(data)
+                            elif results:
+                                str_data = results.text
+                        except:
+                            str_data = data.hex()
                         try:
                             self.decode(str_data)
                         except Exception as e:
@@ -662,14 +704,14 @@ class ReadQR(QThread):
                         except Exception as e:
                             print("Exception on URDecoder()", e)
                     except Exception as e:
-                        print("Another Exception", e)
+                        print("Another Exception:", e)
 
             if self.qr_data:
                 if self.qr_data.is_completed:
                     self.video_stream.emit(None)
                     self.data.emit(self.qr_data.data)
-                    if self.qr_data.qr_type is None:
-                        print(self.qr_data.data)
+                    print(f"\n#{sequence_reader} PARSED str data:")
+                    print(self.qr_data.data)
                     break
         if self.end:
             self.video_stream.emit(None)
@@ -693,6 +735,7 @@ class ReadQR(QThread):
         qr.make(fit=False)
         # print(data, qr.version, self.version_read)
         self.version_read.append(qr.version)
+        self.len_read += len(data)
 
     def decode(self, data):
         '''Multipart QR Code case'''
@@ -936,7 +979,7 @@ class MainWindow(QMainWindow):
 
         self.ui.steps.setAlignment(Qt.AlignHCenter)
 
-        self.ui.combo_type.addItems(['Descriptor', 'PSBT', 'Key', 'Bytes'])
+        self.ui.combo_type.addItems([COMBO_TYPE_DESCRIPTOR, COMBO_TYPE_PSBT, COMBO_TYPE_KEY, COMBO_TYPE_BYTES])
         self.ui.combo_type.hide()
         self.data_type = None
 
@@ -1046,10 +1089,15 @@ class MainWindow(QMainWindow):
         self.format = self.ui.combo_format.currentText()
 
         if self.format == FORMAT_UR:
+            self.ui.combo_type.setDisabled(False)
             self.ui.combo_type.show()
             self.on_data_type_change()
-
-        elif self.format in (FORMAT_SPECTER, FORMAT_BBQR):
+        elif self.format == FORMAT_BBQR:
+            self.ui.combo_type.show()
+            self.ui.combo_type.setCurrentText(COMBO_TYPE_PSBT)
+            self.ui.combo_type.setDisabled(True)
+            self.data_type = None
+        else:
             self.ui.combo_type.hide()
             self.data_type = None
 
@@ -1103,6 +1151,7 @@ class MainWindow(QMainWindow):
                     print("Could not identify data", e)
                 
         self.ui.data_in.setPlainText(data)
+        print("\n"*2 + "-" *120 + "\n"*4)
 
         mode = 'byte'
         if not isinstance(data, bytes):
@@ -1117,9 +1166,9 @@ class MainWindow(QMainWindow):
             if isinstance(ver, list):
                 ver = f"{min(ver)} to {max(ver)}"
 
-            ecc = f"Version {ver} ({self.read_qr.ecc_read}) - "
+            ecc = f"QR: Estimated Version {ver} ({self.read_qr.ecc_read}) {self.read_qr.len_read} chars "
         
-        self.ui.info_read.setPlainText(f"{ecc}{len(data)} chars ({mode})")
+        self.ui.info_read.setPlainText(f"{ecc}({mode}) - Parsed str data: {len(data)} chars")
 
     def upd_camera_stream(self, frame):
         if frame is None:
@@ -1156,7 +1205,7 @@ class MainWindow(QMainWindow):
         data.replace(' ', '').replace('\n', '')
 
         if not self.display_qr.isRunning() and self.display_qr.stop and data != '':
-            _max = None if self.ui.no_split.isChecked() else self.ui.send_slider.value()
+            _max = NO_SPLIT_MAX_CHARS if self.ui.no_split.isChecked() else self.ui.send_slider.value()
 
             try:
                 qr = MultiQRCode.from_string(data, _max=_max, type=self.data_type, format=self.format)
@@ -1188,13 +1237,9 @@ class MainWindow(QMainWindow):
     def updateDisableQRCombo(self):
         disable = self.ui.btn_generate.text() == STOP_QR_TXT
         self.ui.combo_error.setDisabled(disable)
-
-        if self.ui.no_split.isChecked():
-            self.ui.combo_type.setDisabled(True)
-            self.ui.combo_format.setDisabled(True)
-        else:
+        self.ui.combo_format.setDisabled(disable)
+        if self.format != FORMAT_BBQR:
             self.ui.combo_type.setDisabled(disable)
-            self.ui.combo_format.setDisabled(disable)
 
     def select_data_type(self, data_type):
         self.data_type = data_type
