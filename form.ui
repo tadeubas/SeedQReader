@@ -38,7 +38,7 @@
      <property name="geometry">
       <rect>
        <x>10</x>
-       <y>350</y>
+       <y>380</y>
        <width>771</width>
        <height>201</height>
       </rect>
@@ -54,9 +54,9 @@
      <property name="geometry">
       <rect>
        <x>10</x>
-       <y>556</y>
+       <y>586</y>
        <width>771</width>
-       <height>28</height>
+       <height>38</height>
       </rect>
      </property>
      <property name="lineWrapMode">
@@ -265,7 +265,7 @@
       <rect>
        <x>10</x>
        <y>140</y>
-       <width>111</width>
+       <width>191</width>
        <height>27</height>
       </rect>
      </property>
@@ -273,7 +273,7 @@
     <widget class="QComboBox" name="combo_error">
      <property name="geometry">
       <rect>
-       <x>126</x>
+       <x>206</x>
        <y>140</y>
        <width>100</width>
        <height>27</height>
