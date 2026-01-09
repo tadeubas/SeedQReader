@@ -44,7 +44,7 @@ import base64
 import assets_rc
 
 
-VERSION="1.4.0"
+VERSION="1.4.1"
 
 MAX_LEN = 100
 FILL_COLOR = "#434343"
@@ -78,10 +78,6 @@ PYZBAR_SYMBOLS = (pyzbar.ZBarSymbol.QRCODE, pyzbar.ZBarSymbol.SQCODE)
 bbqr_obj = None
 
 sequence_reader = 0
-
-
-def to_str(bin_):
-    return bin_.decode('utf-8')
 
 
 def descriptor_to_output(descriptor_str):
@@ -384,14 +380,17 @@ class MultiQRCode(QRCode):
                     self.data = Output.from_cbor(cbor).descriptor()
                 #  bytes
                 elif _type == 'bytes':
-                    print('bytes')
-                    self.data = Bytes.from_cbor(cbor).data.decode('utf-8')
+                    self.data = Bytes.from_cbor(cbor).data
+                    try:
+                        self.data = self.data.decode('utf-8')
+                    except:
+                        self.data = self.data.hex()
 
                 else:
-                    print(f"Type not yet implemented: {type}")
+                    print(f"\nUR type not yet implemented: {_type}")
                     return
 
-                print(f"{_type}:{self.data}")
+                print(f"\nUR type: {_type}")
 
             else:
                 print("fail to complete UR parsing: ", end='')
@@ -659,20 +658,20 @@ class ReadQR(QThread):
                         if isinstance(data, bytes):
                             print(f"\n#{sequence_reader} BYTES in HEX (raw data):")
                             print(data.hex())
+                        
                         print(f"\n#{sequence_reader} RAW data:")
                         try:
                             print(data)
                         except Exception as e:
-                            print("Exception trying to print data:", e)
+                            print("\nException trying to print data:", e)
+                        
                         try:
-                            if data:
-                                str_data = to_str(data)
-                            elif results:
-                                str_data = results.text
+                            str_data = data.decode("utf-8")
                         except:
                             str_data = data.hex()
+                        
                         try:
-                            self.decode(str_data)
+                            self.decode(str_data) # First try to decode
                         except Exception as e:
                             print("Can't decode str_data", e)
 
@@ -700,10 +699,10 @@ class ReadQR(QThread):
                                     print('bytes')
                                     data = Bytes.from_cbor(cbor).data
                                 else:
-                                    print(f"Type not yet implemented: {type}")
+                                    print(f"Type not yet implemented: {_type}")
 
                                 # print("UR data", data)
-                                self.decode(data)
+                                self.decode(data) # Second try to decode (just for UR)
                         except Exception as e:
                             print("Exception on URDecoder()", e)
                     except Exception as e:
