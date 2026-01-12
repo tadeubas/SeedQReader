@@ -742,12 +742,12 @@ class ReadQR(QThread):
 
             self.qr_data.append(data)
 
-            progress = self.qr_data.decoder.estimated_percent_complete() * 100
             try:
                 self.qr_data.total_sequences = self.qr_data.decoder.expected_part_count()
             except:
                 self.qr_data.total_sequences = 0
             self.qr_data.sequences_count = len(self.qr_data.decoder.received_part_indexes())
+            progress = round(self.qr_data.sequences_count / self.qr_data.total_sequences * 100) # self.qr_data.decoder.estimated_percent_complete() * 100
             self.parent.ui.read_progress.setValue(progress)
             self.parent.ui.read_progress.setFormat(f"{self.qr_data.sequences_count}/{self.qr_data.total_sequences}")
             self.parent.ui.read_progress.setVisible(True)
@@ -859,7 +859,9 @@ class DisplayQR(QThread):
             modes = set()
             for element in qr.data_list:
                 modes.add(self.mode_to_str(element.mode))
-            self.parent.ui.info_send.setText(f"Version {qr.version} - {len(data)} chars ({', '.join(modes)})")
+            original_data: str = self.parent.ui.data_out.toPlainText()
+            original_data.replace(' ', '').replace('\n', '')
+            self.parent.ui.info_send.setText(f"Version {qr.version} - {len(data)} chars ({', '.join(modes)}) - Source: {len(original_data)} chars")
             img = qr.make_image()
             pil_image = img.convert("RGB")
             qimage = ImageQt.ImageQt(pil_image)
