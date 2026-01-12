@@ -361,40 +361,39 @@ class MultiQRCode(QRCode):
             self.data = data
 
     def check_complete_ur(self):
-        if self.decoder.is_complete():
-            if self.decoder.is_success():
-                self.is_completed = True
-                cbor = self.decoder.result_message().cbor
-                _type = self.decoder.result_message().type
-                #  XPub
-                if _type == 'crypto-account':
-                    self.data = Account.from_cbor(cbor).output_descriptors[0].descriptor()
-                #  PSBT
-                elif _type == 'crypto-psbt':
-                    self.data = UR_PSBT.from_cbor(cbor).data
-                    if type(self.data) is bytes:
-                        self.data = PSBT.parse(self.data).to_string()
+        if self.decoder.is_complete() and self.decoder.is_success():
+            self.is_completed = True
+            cbor = self.decoder.result_message().cbor
+            _type = self.decoder.result_message().type
+            #  XPub
+            if _type == 'crypto-account':
+                self.data = Account.from_cbor(cbor).output_descriptors[0].descriptor()
+            #  PSBT
+            elif _type == 'crypto-psbt':
+                self.data = UR_PSBT.from_cbor(cbor).data
+                if type(self.data) is bytes:
+                    self.data = PSBT.parse(self.data).to_string()
 
-                #  Descriptor
-                elif _type == 'crypto-output':
-                    self.data = Output.from_cbor(cbor).descriptor()
-                #  bytes
-                elif _type == 'bytes':
-                    self.data = Bytes.from_cbor(cbor).data
-                    try:
-                        self.data = self.data.decode('utf-8')
-                    except:
-                        self.data = self.data.hex()
-
-                else:
-                    print(f"\nUR type not yet implemented: {_type}")
-                    return
-
-                print(f"\nUR type: {_type}")
+            #  Descriptor
+            elif _type == 'crypto-output':
+                self.data = Output.from_cbor(cbor).descriptor()
+            #  bytes
+            elif _type == 'bytes':
+                self.data = Bytes.from_cbor(cbor).data
+                try:
+                    self.data = self.data.decode('utf-8')
+                except:
+                    self.data = self.data.hex()
 
             else:
-                print("fail to complete UR parsing: ", end='')
-                print(self.decoder.result_error())
+                print(f"\nUR type not yet implemented: {_type}")
+                return
+
+            # print(f"\nUR type: {_type}")
+
+        else:
+            print("fail to complete UR parsing: ", end='')
+            print(self.decoder.result_error())
 
     @staticmethod
     def from_string(data, _max=MAX_LEN, type=None, format=None):
@@ -670,41 +669,12 @@ class ReadQR(QThread):
                         except:
                             str_data = data.hex()
                         
+                        # Try to decode
                         try:
-                            self.decode(str_data) # First try to decode
+                            self.decode(str_data)
                         except Exception as e:
                             print("Can't decode str_data", e)
 
-                        try:
-                            ur_decoder = URDecoder()
-                            ur_decoder.receive_part(str_data)
-                            if ur_decoder.is_complete() and ur_decoder.is_success():
-                                cbor = ur_decoder.result_message().cbor
-                                _type = ur_decoder.result_message().type
-                                # print("completed and success", _type, cbor)
-
-                                #  XPub
-                                if _type == 'crypto-account':
-                                    data = Account.from_cbor(cbor).output_descriptors[0].descriptor()
-                                #  PSBT
-                                elif _type == 'crypto-psbt':
-                                    data = UR_PSBT.from_cbor(cbor).data
-                                    if type(data) is bytes:
-                                        data = PSBT.parse(data).to_string()
-                                #  Descriptor
-                                elif _type == 'crypto-output':
-                                    data = Output.from_cbor(cbor).descriptor()
-                                #  bytes
-                                elif _type == 'bytes':
-                                    print('bytes')
-                                    data = Bytes.from_cbor(cbor).data
-                                else:
-                                    print(f"Type not yet implemented: {_type}")
-
-                                # print("UR data", data)
-                                self.decode(data) # Second try to decode (just for UR)
-                        except Exception as e:
-                            print("Exception on URDecoder()", e)
                     except Exception as e:
                         print("Another Exception:", e)
 
@@ -765,6 +735,7 @@ class ReadQR(QThread):
         # UR format
         elif re.match(r'^UR:', data, re.IGNORECASE):
 
+            # single/multi QR UR
             if not self.qr_data:
                 self.qr_data = MultiQRCode()
                 self.qr_data.qr_type = qr_type.UR
