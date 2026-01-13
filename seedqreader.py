@@ -361,39 +361,40 @@ class MultiQRCode(QRCode):
             self.data = data
 
     def check_complete_ur(self):
-        if self.decoder.is_complete() and self.decoder.is_success():
-            self.is_completed = True
-            cbor = self.decoder.result_message().cbor
-            _type = self.decoder.result_message().type
-            #  XPub
-            if _type == 'crypto-account':
-                self.data = Account.from_cbor(cbor).output_descriptors[0].descriptor()
-            #  PSBT
-            elif _type == 'crypto-psbt':
-                self.data = UR_PSBT.from_cbor(cbor).data
-                if type(self.data) is bytes:
-                    self.data = PSBT.parse(self.data).to_string()
+        if self.decoder.is_complete():
+            if self.decoder.is_success():
+                self.is_completed = True
+                cbor = self.decoder.result_message().cbor
+                _type = self.decoder.result_message().type
+                #  XPub
+                if _type == 'crypto-account':
+                    self.data = Account.from_cbor(cbor).output_descriptors[0].descriptor()
+                #  PSBT
+                elif _type == 'crypto-psbt':
+                    self.data = UR_PSBT.from_cbor(cbor).data
+                    if type(self.data) is bytes:
+                        self.data = PSBT.parse(self.data).to_string()
+                #  Descriptor
+                elif _type == 'crypto-output':
+                    self.data = Output.from_cbor(cbor).descriptor()
+                #  bytes
+                elif _type == 'bytes':
+                    self.data = Bytes.from_cbor(cbor).data
+                    if isinstance(self.data, bytes):
+                        try:
+                            self.data = self.data.decode('utf-8')
+                        except:
+                            self.data = self.data.hex()
+                # unknown
+                else:
+                    print(f"\nUR type not yet implemented: {_type}")
+                    return
 
-            #  Descriptor
-            elif _type == 'crypto-output':
-                self.data = Output.from_cbor(cbor).descriptor()
-            #  bytes
-            elif _type == 'bytes':
-                self.data = Bytes.from_cbor(cbor).data
-                try:
-                    self.data = self.data.decode('utf-8')
-                except:
-                    self.data = self.data.hex()
-
+                # print(f"\nUR type: {_type}")
+            # decodef fail!
             else:
-                print(f"\nUR type not yet implemented: {_type}")
-                return
-
-            # print(f"\nUR type: {_type}")
-
-        else:
-            print("fail to complete UR parsing: ", end='')
-            print(self.decoder.result_error())
+                print("fail to complete UR parsing: ", end='')
+                print(self.decoder.result_error())
 
     @staticmethod
     def from_string(data, _max=MAX_LEN, type=None, format=None):
@@ -664,15 +665,20 @@ class ReadQR(QThread):
                         except Exception as e:
                             print("\nException trying to print data:", e)
                         
-                        try:
-                            str_data = data.decode("utf-8")
-                        except:
-                            str_data = data.hex()
+                        if isinstance(data, bytes):
+                            try:
+                                str_data = data.decode("utf-8")
+                            except:
+                                str_data = data.hex()
+                        else:
+                            str_data = data
                         
                         # Try to decode
                         try:
                             self.decode(str_data)
                         except Exception as e:
+                            import traceback
+                            traceback.print_exc()
                             print("Can't decode str_data", e)
 
                     except Exception as e:
@@ -744,13 +750,15 @@ class ReadQR(QThread):
 
             try:
                 self.qr_data.total_sequences = self.qr_data.decoder.expected_part_count()
+                self.qr_data.sequences_count = len(self.qr_data.decoder.received_part_indexes())
+                progress = round(self.qr_data.sequences_count / self.qr_data.total_sequences * 100) # self.qr_data.decoder.estimated_percent_complete() * 100
+                self.parent.ui.read_progress.setValue(progress)
+                self.parent.ui.read_progress.setFormat(f"{self.qr_data.sequences_count}/{self.qr_data.total_sequences}")
+                self.parent.ui.read_progress.setVisible(True)
             except:
+                self.qr_data.sequences_count = 0
                 self.qr_data.total_sequences = 0
-            self.qr_data.sequences_count = len(self.qr_data.decoder.received_part_indexes())
-            progress = round(self.qr_data.sequences_count / self.qr_data.total_sequences * 100) # self.qr_data.decoder.estimated_percent_complete() * 100
-            self.parent.ui.read_progress.setValue(progress)
-            self.parent.ui.read_progress.setFormat(f"{self.qr_data.sequences_count}/{self.qr_data.total_sequences}")
-            self.parent.ui.read_progress.setVisible(True)
+            
 
         elif data.startswith("B$"):
             global bbqr_obj
