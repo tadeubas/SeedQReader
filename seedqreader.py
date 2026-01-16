@@ -708,6 +708,8 @@ class ReadQR(QThread):
         elif ecc == "H":
             self.ecc_read = ECC_H
             level = qrcode.constants.ERROR_CORRECT_H
+        else:
+            return
         qr = qrcode.QRCode(error_correction=level)
         qr.add_data(data)
         qr.make(fit=False)
