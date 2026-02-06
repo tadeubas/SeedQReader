@@ -26,7 +26,7 @@ python3 -m venv .seedqrenv
 source .seedqrenv/bin/activate
 
 # install python dependencies on this environment
-pip install -r requirements.txt 
+pip install -r requirements.txt
 ```
 
 If you get this error on **Linux**, please install libxcb-cursor:

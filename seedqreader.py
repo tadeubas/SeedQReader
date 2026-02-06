@@ -621,7 +621,7 @@ class ReadQR(QThread):
                 # Set the pixmap to the label
                 self.video_stream.emit(scaled_pixmap)
 
-                data = pyzbar.decode(frame, PYZBAR_SYMBOLS)
+                data = pyzbar.decode(frame, PYZBAR_SYMBOLS, binary=True)
                 str_data = ""
                 results = None
                 
