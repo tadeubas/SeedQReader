@@ -44,7 +44,7 @@ import base64
 import assets_rc
 
 
-VERSION="1.4.1"
+VERSION="1.5.0"
 
 MAX_LEN = 100
 FILL_COLOR = "#434343"
@@ -53,6 +53,8 @@ STOP_QR_TXT = 'Remove QR'
 STOP_READ_TXT = ' Stop'
 START_READ_TXT = ' Scan'
 GENERATE_TXT = 'Generate QR'
+
+USE_ARROWS_TXT = '(← / → to change)' 
 
 ANIMATED_QR_FIRST_FRAME_DELAY = 900 #ms
 
@@ -257,21 +259,20 @@ class QRCode:
 class MultiQRCode(QRCode):
     data_stack: list = field(default_factory=list)
     is_init: bool = False
-    current: int = 0
+    current: int = -1
+    last_index = current
     total_sequences = None
     qr_type = None
     data_type = None
     decoder = None
     encoder = None
+    qr_steps = {}
 
     def step(self):
         if self.qr_type in (qr_type.SPECTER, qr_type.BBQR):
             self.total_sequences = len(self.data_stack)
-
-            return f"{self.current + 1}/{self.total_sequences}"
-
-        elif self.qr_type == qr_type.UR:
-            return f"{self.current + 1}/{self.total_sequences}"
+        
+        return f"{self.current + 1}/{self.total_sequences} {USE_ARROWS_TXT}"
 
     def append(self, data: tuple):
         if self.qr_type == qr_type.SPECTER:
@@ -493,27 +494,40 @@ class MultiQRCode(QRCode):
 
         return out
 
-    def next(self) -> str:
+    def next(self, is_prev = False) -> str:
         data = None
-        if self.qr_type == qr_type.SPECTER:
+        if self.qr_type in (qr_type.SPECTER, qr_type.BBQR):
+            if is_prev:
+                self.current -= 1
+                if self.current < 0:
+                    self.current = self.total_sequences - 1
+            else:
+                self.current += 1
+                if self.current >= self.total_sequences:
+                    self.current = 0
+
             data = self.data_stack[self.current]
 
-            digit_a = self.current + 1
-            digit_b = self.total_sequences
-
-            data = f"p{digit_a}of{digit_b} {data}"
-
-            self.current += 1
-            if self.current >= self.total_sequences:
-                self.current = 0
+            if self.qr_type == qr_type.SPECTER:
+                digit_a = self.current + 1
+                digit_b = self.total_sequences
+                data = f"p{digit_a}of{digit_b} {data}"
         elif self.qr_type == qr_type.UR:
-            self.current = self.encoder.fountain_encoder.seq_num
-            data = self.encoder.next_part().upper()
-        elif self.qr_type == qr_type.BBQR:
-            data = self.data_stack[self.current]
-            self.current += 1
-            if self.current >= self.total_sequences:
-                self.current = 0
+            if not is_prev:
+                if self.current == self.last_index:
+                    self.current = self.encoder.fountain_encoder.seq_num
+                    data = self.encoder.next_part().upper()
+                    self.qr_steps[self.current] = data # store new value to dict
+                    self.last_index = self.current # store last known index
+                else:
+                    self.current += 1
+                    data = self.qr_steps[self.current] # get store val on dict
+            else: # get prev value on dict
+                self.current -= 1
+                if self.current < 0:
+                    self.current = 0
+                data = self.qr_steps.get(self.current)
+
         
         return data
 
@@ -626,6 +640,8 @@ class ReadQR(QThread):
                 data = pyzbar.decode(frame, PYZBAR_SYMBOLS, binary=True)
                 str_data = ""
                 results = None
+
+                # data = None
                 
                 if not data:
                     # Try other lib
@@ -643,12 +659,15 @@ class ReadQR(QThread):
                             results = zxingcpp.read_barcodes(rgb)
 
                 if data or results:
+                    # print(data)
+                    # print(results)
                     try:
                         if data:
                             data = data[0].data
                             rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                             results = zxingcpp.read_barcodes(rgb)
                             if results:
+                                # print(results[0].bytes)
                                 ecc = results[0].ec_level
                                 self._parse_ecc_and_version(data, ecc)
                         elif results:
@@ -822,29 +841,28 @@ class DisplayQR(QThread):
     def set_delay(self, delay):
         self.delay = delay
 
+    def process_run(self, sleep_delay=0, is_prev = False):
+        data = self.qr_data.next(is_prev)
+        if self.qr_data.total_sequences > 1:
+            self.parent.ui.steps.setText(self.qr_data.step())
+        self.display_qr(data)
+        self.msleep(sleep_delay)
+
     def run(self):
         self.stop = False
-        if self.qr_data.total_sequences > 1 or self.qr_data.qr_type == qr_type.UR:
+        if self.qr_data.total_sequences > 1:
             remove_qr = True
-            firstFrame = True
-            while not self.stop:
-                self.parent.ui.steps.setText(self.qr_data.step())
-                data = self.qr_data.next()
-                if self.qr_data.qr_type == qr_type.UR:
-                    self.parent.ui.steps.setText(self.qr_data.step())
-                self.display_qr(data)
-                self.msleep(self.delay)
-                if self.qr_data.total_sequences == 1:
-                    remove_qr = False
-                    break
-                if firstFrame:
-                    firstFrame = False
-                    self.msleep(ANIMATED_QR_FIRST_FRAME_DELAY)
-            if remove_qr:
+            self.process_run(self.delay + ANIMATED_QR_FIRST_FRAME_DELAY)
+            while not (self.stop or self.parent.arrow_pressed):
+                self.process_run(self.delay)
+            if self.stop and remove_qr:
                 self.video_stream.emit(None)
         elif self.qr_data.total_sequences == 1:
-            data = self.qr_data.data
-            self.display_qr(data)
+            if self.qr_data.qr_type == qr_type.UR:
+                self.process_run(self.delay)
+            else:
+                data = self.qr_data.data
+                self.display_qr(data)
 
     def mode_to_str(self, mode):
         if mode == qrcode.util.MODE_NUMBER:
@@ -902,6 +920,11 @@ class MainWindow(QMainWindow):
         ui_file = QFile(path)
         ui_file.open(QFile.ReadOnly)
         self.ui = loader.load(ui_file, self)
+
+        # Disable tabWidget capture of arrow left/right
+        self.ui.tabWidget.tabBar().setFocusPolicy(Qt.NoFocus)
+        self.arrow_pressed = False
+
         ui_file.close()
         self.setWindowTitle("SeedQReader " + VERSION)
         self.setWindowIcon(QIcon(':/assets/icon.png'))
@@ -918,8 +941,7 @@ class MainWindow(QMainWindow):
         self.ui.send_slider.valueChanged.connect(self.on_slider_move)
         self.ui.delay_slider.valueChanged.connect(self.on_delay_slider_move)
         self.ui.no_split.stateChanged.connect(self.on_no_split_change)
-        self.ui.no_split_label.installEventFilter(self)
-        self.ui.inverted_label.installEventFilter(self)
+        QApplication.instance().installEventFilter(self)
 
         # use monospace font for data in/out boxes
         font = QFontDatabase.systemFont(QFontDatabase.SystemFont.FixedFont)
@@ -981,12 +1003,25 @@ class MainWindow(QMainWindow):
         self.init_qr()
 
     def eventFilter(self, obj, event):
-        if obj == self.ui.no_split_label and event.type() == QEvent.MouseButtonPress:
-            self.ui.no_split.setChecked(not self.ui.no_split.isChecked())
-            return True
-        if obj == self.ui.inverted_label and event.type() == QEvent.MouseButtonPress:
-            self.ui.inverted.setChecked(not self.ui.inverted.isChecked())
-            return True
+        if event.type() == QEvent.KeyPress:
+            # animater QR shown
+            if self.display_qr.qr_data and self.display_qr.qr_data.total_sequences > 1:
+                if event.key() in (Qt.Key.Key_Right, Qt.Key.Key_Left):
+                    self.arrow_pressed = True
+
+                    if event.key() == Qt.Key.Key_Right:
+                        self.display_qr.process_run()
+                    else:
+                        self.display_qr.process_run(is_prev=True)
+
+                    return True  # block default behavior
+        
+        if event.type() == QEvent.MouseButtonPress:
+            if obj == self.ui.no_split_label:
+                self.ui.no_split.setChecked(not self.ui.no_split.isChecked())
+            if obj == self.ui.inverted_label:
+                self.ui.inverted.setChecked(not self.ui.inverted.isChecked())
+        
         return super().eventFilter(obj, event)
 
     def init_qr(self):
@@ -1223,6 +1258,8 @@ class MainWindow(QMainWindow):
 
     def updateDisableQRCombo(self):
         disable = self.ui.btn_generate.text() == STOP_QR_TXT
+        if disable:
+            self.arrow_pressed = False
         self.ui.combo_error.setDisabled(disable)
         self.ui.combo_format.setDisabled(disable)
         if self.format != FORMAT_BBQR:
