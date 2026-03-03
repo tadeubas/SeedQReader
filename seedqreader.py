@@ -460,11 +460,11 @@ class MultiQRCode(QRCode):
                 if not _max:
                     _max = 100000
 
-                if type == 'PSBT':
+                if type == COMBO_TYPE_PSBT:
                     out.data_type = 'crypto-psbt'
                     data = PSBT.from_string(data).serialize()
                     ur = UR(out.data_type, UR_PSBT(data).to_cbor())
-                elif type == 'Descriptor':
+                elif type == COMBO_TYPE_DESCRIPTOR:
                     # Try to encode as crypto-output, fall back to bytes for complex descriptors
                     try:
                         out.data_type = 'crypto-output'
@@ -474,10 +474,10 @@ class MultiQRCode(QRCode):
                         print(f"Cannot encode as crypto-output ({e}), encoding as bytes instead")
                         out.data_type = 'bytes'
                         ur = UR(out.data_type, Bytes(data).to_cbor())
-                elif type == 'Key':
+                elif type == COMBO_TYPE_KEY:
                     out.data_type = 'bytes'
                     ur = UR(out.data_type, Bytes(data).to_cbor())
-                elif type == 'Bytes':
+                elif type == COMBO_TYPE_BYTES:
                     out.data_type = 'bytes'
                     ur = UR(out.data_type, Bytes(data).to_cbor())
                 else:
@@ -1235,55 +1235,55 @@ class MainWindow(QMainWindow):
     def radio_select(self):
         if self.ui.desc_1.isChecked():
             self.radio_selected = 'desc_1'
-            self.select_data_type('Descriptor')
+            self.select_data_type(COMBO_TYPE_DESCRIPTOR)
 
         elif self.ui.desc_2.isChecked():
             self.radio_selected = 'desc_2'
-            self.select_data_type('Descriptor')
+            self.select_data_type(COMBO_TYPE_DESCRIPTOR)
 
         elif self.ui.desc_3.isChecked():
             self.radio_selected = 'desc_3'
-            self.select_data_type('Descriptor')
+            self.select_data_type(COMBO_TYPE_DESCRIPTOR)
 
         elif self.ui.psbt_1.isChecked():
             self.radio_selected = 'psbt_1'
-            self.select_data_type('PSBT')
+            self.select_data_type(COMBO_TYPE_PSBT)
 
         elif self.ui.psbt_2.isChecked():
             self.radio_selected = 'psbt_2'
-            self.select_data_type('PSBT')
+            self.select_data_type(COMBO_TYPE_PSBT)
 
         elif self.ui.psbt_3.isChecked():
             self.radio_selected = 'psbt_3'
-            self.select_data_type('PSBT')
+            self.select_data_type(COMBO_TYPE_PSBT)
 
         elif self.ui.psbt_4.isChecked():
             self.radio_selected = 'psbt_4'
-            self.select_data_type('PSBT')
+            self.select_data_type(COMBO_TYPE_PSBT)
 
         elif self.ui.psbt_5.isChecked():
             self.radio_selected = 'psbt_5'
-            self.select_data_type('PSBT')
+            self.select_data_type(COMBO_TYPE_PSBT)
 
         elif self.ui.key_1.isChecked():
             self.radio_selected = 'key_1'
-            self.select_data_type('Key')
+            self.select_data_type(COMBO_TYPE_KEY)
 
         elif self.ui.key_2.isChecked():
             self.radio_selected = 'key_2'
-            self.select_data_type('Key')
+            self.select_data_type(COMBO_TYPE_KEY)
 
         elif self.ui.key_3.isChecked():
             self.radio_selected = 'key_3'
-            self.select_data_type('Key')
+            self.select_data_type(COMBO_TYPE_KEY)
 
         elif self.ui.key_4.isChecked():
             self.radio_selected = 'key_4'
-            self.select_data_type('Key')
+            self.select_data_type(COMBO_TYPE_KEY)
 
         elif self.ui.key_5.isChecked():
             self.radio_selected = 'key_5'
-            self.select_data_type('Key')
+            self.select_data_type(COMBO_TYPE_KEY)
 
         else:
             return
