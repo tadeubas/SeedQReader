@@ -1003,6 +1003,15 @@ class MainWindow(QMainWindow):
         self.init_qr()
 
     def eventFilter(self, obj, event):
+        
+        if event.type() == QEvent.ToolTip:
+            # update data_in and data_out tooltip with char count
+            count = len(self.ui.data_in.toPlainText())
+            self.ui.data_in.setToolTip(str(count) + " chars")
+            
+            count = len(self.ui.data_out.toPlainText())
+            self.ui.data_out.setToolTip(str(count) + " chars")
+
         if event.type() == QEvent.KeyPress:
             # animater QR shown
             if self.display_qr.qr_data and self.display_qr.qr_data.total_sequences > 1:
