@@ -141,6 +141,8 @@ def descriptor_to_output(descriptor_str):
         script_expressions.append(SCRIPT_EXPRESSION_TAG_MAP[403])  # pkh
     elif script_type == "p2pk":
         script_expressions.append(SCRIPT_EXPRESSION_TAG_MAP[402])  # pk
+    elif script_type == "p2tr":
+        script_expressions.append(SCRIPT_EXPRESSION_TAG_MAP[409])  # tr
 
     # Convert keys
     embit_keys = embit_desc.keys
